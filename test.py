@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, random_split
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 # ==========================
 # Step 1: Load and prepare data
@@ -15,10 +16,18 @@ X_tensor = torch.tensor(X.values, dtype=torch.float32)
 y_tensor = torch.tensor(y.values, dtype=torch.long)  # assuming y is a Pandas Series
 protein_tensor = torch.tensor(protein.values, dtype=torch.float32)
 
-# Wrap in dataset and dataloader
-batch_size = 256
+# Wrap in dataset
 dataset = TensorDataset(X_tensor, y_tensor, protein_tensor)
-dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+# Split into training and validation sets (80/20 split)
+train_size = int(0.8 * len(dataset))
+val_size = len(dataset) - train_size
+train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+
+# Data loaders
+batch_size = 256
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
 # ==========================
 # Step 2: Set up GPU device
@@ -57,7 +66,7 @@ class AutoencoderMultiTask(nn.Module):
         return recon, class_logits, protein_preds
 
 # ==========================
-# Step 4: Train Autoencoder with Multi-Task Learning
+# Step 4: Train Autoencoder with Multi-Task Learning and Validation
 # ==========================
 model = AutoencoderMultiTask(
     input_dim=X_tensor.shape[1], 
@@ -76,8 +85,8 @@ alpha, beta, gamma = 1.0, 1.0, 1.0
 
 for epoch in range(10):
     model.train()
-    total_loss = 0
-    for batch in dataloader:
+    total_train_loss = 0
+    for batch in tqdm(train_loader, desc=f"Epoch {epoch+1} [Train]"):
         x, y_batch, protein_batch = batch[0].to(device), batch[1].to(device), batch[2].to(device)
         optimizer.zero_grad()
         recon, logits, protein_preds = model(x)
@@ -87,5 +96,18 @@ for epoch in range(10):
         loss = alpha * loss_recon + beta * loss_class + gamma * loss_protein
         loss.backward()
         optimizer.step()
-        total_loss += loss.item()
-    print(f"Epoch {epoch+1}, Total Loss: {total_loss:.4f}")
+        total_train_loss += loss.item()
+
+    model.eval()
+    total_val_loss = 0
+    with torch.no_grad():
+        for batch in tqdm(val_loader, desc=f"Epoch {epoch+1} [Val]"):
+            x, y_batch, protein_batch = batch[0].to(device), batch[1].to(device), batch[2].to(device)
+            recon, logits, protein_preds = model(x)
+            loss_recon = recon_loss_fn(recon, x)
+            loss_class = class_loss_fn(logits, y_batch)
+            loss_protein = protein_loss_fn(protein_preds, protein_batch)
+            loss = alpha * loss_recon + beta * loss_class + gamma * loss_protein
+            total_val_loss += loss.item()
+
+    print(f"Epoch {epoch+1}, Train Loss: {total_train_loss:.4f}, Val Loss: {total_val_loss:.4f}")
