@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader, TensorDataset, random_split
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 # ==========================
 # Step 1: Load and prepare data
@@ -83,6 +84,9 @@ protein_loss_fn = nn.MSELoss()
 # Optional loss weights
 alpha, beta, gamma = 1.0, 1.0, 1.0
 
+train_losses = []
+val_losses = []
+
 for epoch in range(10):
     model.train()
     total_train_loss = 0
@@ -110,4 +114,21 @@ for epoch in range(10):
             loss = alpha * loss_recon + beta * loss_class + gamma * loss_protein
             total_val_loss += loss.item()
 
+    train_losses.append(total_train_loss)
+    val_losses.append(total_val_loss)
+
     print(f"Epoch {epoch+1}, Train Loss: {total_train_loss:.4f}, Val Loss: {total_val_loss:.4f}")
+
+# ==========================
+# Step 5: Plot training and validation loss
+# ==========================
+plt.figure(figsize=(8, 5))
+plt.plot(train_losses, label='Train Loss')
+plt.plot(val_losses, label='Val Loss')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title('Training vs Validation Loss')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
